@@ -1,0 +1,501 @@
+@page "/sales-order"
+@inject SalesOrderService SoService
+@inject InventoryService Inventory
+
+<PageTitle>Sales Order</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">Sales Order</h3>
+    <div>
+        <button class="btn btn-primary me-2" @onclick="OpenCreate">+ Buat SO Baru</button>
+        <button class="btn btn-outline-secondary" @onclick="ToggleCustomers">Kelola Pelanggan</button>
+    </div>
+</div>
+
+<div class="alert alert-light border small">
+    ℹ️ SO dengan total sampai <strong>Rp @SalesOrder.ApprovalLimit.ToString("N0")</strong> disetujui otomatis.
+    Di atas itu, wajib disetujui Manajer atau Admin.
+</div>
+
+@if (errorMessage != "")
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+@if (successMessage != "")
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<!-- ====== PANEL PELANGGAN ====== -->
+@if (showCustomers)
+{
+    <div class="card mb-4 border-secondary">
+        <div class="card-body">
+            <h5 class="card-title">Daftar Pelanggan</h5>
+            <table class="table table-sm">
+                <thead><tr><th>Nama</th><th>Telepon</th><th>Alamat</th></tr></thead>
+                <tbody>
+                    @foreach (var c in customers)
+                    {
+                        <tr><td>@c.Name</td><td>@c.Phone</td><td>@c.Address</td></tr>
+                    }
+                </tbody>
+            </table>
+
+            <h6>Tambah Pelanggan</h6>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Nama</label>
+                    <input class="form-control" @bind="newCustomerName" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Telepon</label>
+                    <input class="form-control" @bind="newCustomerPhone" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Alamat</label>
+                    <input class="form-control" @bind="newCustomerAddress" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-success w-100" @onclick="AddCustomer">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ====== PANEL BUAT SO ====== -->
+@if (showCreate)
+{
+    <div class="card mb-4 border-primary">
+        <div class="card-body">
+            <h5 class="card-title">Buat Sales Order</h5>
+
+            <div class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Pelanggan</label>
+                    <select class="form-select" @bind="selectedCustomerId">
+                        <option value="0">-- pilih pelanggan --</option>
+                        @foreach (var c in customers)
+                        {
+                            <option value="@c.Id">@c.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Catatan (opsional)</label>
+                    <input class="form-control" @bind="soNote" />
+                </div>
+            </div>
+
+            <h6>Tambah Barang</h6>
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-7">
+                    <label class="form-label">Produk</label>
+                    <select class="form-select" @bind="lineSku">
+                        <option value="">-- pilih produk --</option>
+                        @foreach (var p in products)
+                        {
+                            <option value="@p.Sku">@p.Sku — @p.Name (stok @p.Stock, Rp @p.Price.ToString("N0"))</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Jumlah</label>
+                    <input type="number" class="form-control" @bind="lineQty" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-secondary w-100" @onclick="AddLine">+ Tambah</button>
+                </div>
+            </div>
+
+            @if (lines.Count > 0)
+            {
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Produk</th>
+                            <th class="text-end">Jumlah</th>
+                            <th class="text-end">Harga</th>
+                            <th class="text-end">Subtotal</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in lines)
+                        {
+                            <tr>
+                                <td>@l.Sku — @l.ProductName</td>
+                                <td class="text-end">@l.Quantity</td>
+                                <td class="text-end">Rp @l.UnitPrice.ToString("N0")</td>
+                                <td class="text-end">Rp @l.Subtotal.ToString("N0")</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveLine(l)">✕</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="text-end fw-bold">Total: Rp @LinesTotal.ToString("N0")</p>
+
+                @if (LinesTotal > SalesOrder.ApprovalLimit)
+                {
+                    <div class="alert alert-warning py-2">⏳ Total di atas batas. SO ini akan menunggu persetujuan Manajer.</div>
+                }
+                else
+                {
+                    <div class="alert alert-success py-2">✅ Total di bawah batas. SO ini akan langsung disetujui.</div>
+                }
+            }
+
+            <button class="btn btn-primary me-2" @onclick="SubmitSo" disabled="@(lines.Count == 0)">Simpan SO</button>
+            <button class="btn btn-outline-secondary" @onclick="CloseAll">Batal</button>
+        </div>
+    </div>
+}
+
+<!-- ====== PANEL TOLAK ====== -->
+@if (rejecting != null)
+{
+    <div class="card mb-4 border-danger">
+        <div class="card-body">
+            <h5 class="card-title">Tolak @rejecting.Number — @rejecting.CustomerName</h5>
+            <label class="form-label">Alasan penolakan</label>
+            <input class="form-control mb-2" @bind="rejectReason" />
+            <button class="btn btn-danger me-2" @onclick="ConfirmReject">Tolak SO</button>
+            <button class="btn btn-outline-secondary" @onclick="CloseAll">Batal</button>
+        </div>
+    </div>
+}
+
+<!-- ====== PANEL DETAIL ====== -->
+@if (detail != null)
+{
+    <div class="card mb-4 border-info">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <h5 class="card-title">Detail @detail.Number — @detail.CustomerName</h5>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CloseAll">Tutup</button>
+            </div>
+
+            <p class="mb-1">Dibuat oleh <strong>@detail.CreatedByName</strong>, @detail.CreatedAt.ToString("dd/MM/yyyy HH:mm")</p>
+            @if (detail.IsAutoApproved)
+            {
+                <p class="mb-1">✅ Disetujui <strong>otomatis</strong> (total tidak melebihi batas)</p>
+            }
+            else if (detail.DecidedByName != null)
+            {
+                <p class="mb-1">Diputuskan oleh <strong>@detail.DecidedByName</strong>, @(detail.DecidedAt?.ToString("dd/MM/yyyy HH:mm"))</p>
+            }
+            @if (detail.ShippedByName != null)
+            {
+                <p class="mb-1">Dikirim oleh <strong>@detail.ShippedByName</strong>, @(detail.ShippedAt?.ToString("dd/MM/yyyy HH:mm"))</p>
+            }
+            @if (!string.IsNullOrEmpty(detail.RejectReason))
+            {
+                <p class="mb-1 text-danger">Alasan ditolak: @detail.RejectReason</p>
+            }
+            @if (detail.Note != "")
+            {
+                <p class="mb-1">Catatan: @detail.Note</p>
+            }
+
+            <table class="table table-sm mt-2">
+                <thead>
+                    <tr>
+                        <th>Produk</th>
+                        <th class="text-end">Jumlah</th>
+                        <th class="text-end">Harga</th>
+                        <th class="text-end">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var l in detail.Lines)
+                    {
+                        <tr>
+                            <td>@l.ProductSku — @l.ProductName</td>
+                            <td class="text-end">@l.Quantity</td>
+                            <td class="text-end">Rp @l.UnitPrice.ToString("N0")</td>
+                            <td class="text-end">Rp @l.Subtotal.ToString("N0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="text-end fw-bold mb-0">Total: Rp @detail.Total.ToString("N0")</p>
+        </div>
+    </div>
+}
+
+<!-- ====== DAFTAR SO ====== -->
+<table class="table">
+    <thead>
+        <tr>
+            <th>No.</th>
+            <th>Tanggal</th>
+            <th>Pelanggan</th>
+            <th class="text-end">Jumlah Barang</th>
+            <th class="text-end">Total</th>
+            <th>Status</th>
+            <th>Dibuat oleh</th>
+            <th>Aksi</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (orders.Count == 0)
+        {
+            <tr><td colspan="8" class="text-center text-muted">Belum ada SO.</td></tr>
+        }
+        @foreach (var so in orders)
+        {
+            <tr>
+                <td>@so.Number</td>
+                <td>@so.CreatedAt.ToString("dd/MM/yyyy")</td>
+                <td>@so.CustomerName</td>
+                <td class="text-end">@so.TotalQuantity</td>
+                <td class="text-end">Rp @so.Total.ToString("N0")</td>
+                <td><span class="badge @StatusColor(so.Status)">@so.StatusText</span></td>
+                <td>@so.CreatedByName</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ShowDetail(so)">Detail</button>
+                    @if (so.Status == SoStatus.PendingApproval && canApprove && so.CreatedBy != user.Username())
+                    {
+                        <button class="btn btn-sm btn-success me-1" @onclick="() => Approve(so)">Setujui</button>
+                        <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => StartReject(so)">Tolak</button>
+                    }
+                    @if (so.Status == SoStatus.Approved)
+                    {
+                        <button class="btn btn-sm btn-primary" @onclick="() => Ship(so)">🚚 Kirim Barang</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthTask { get; set; } = default!;
+    private ClaimsPrincipal user = new();
+    private bool canApprove;
+
+    private List<SalesOrder> orders = new();
+    private List<Customer> customers = new();
+    private List<Product> products = new();
+
+    // Panel yang sedang terbuka
+    private bool showCreate;
+    private bool showCustomers;
+    private SalesOrder? detail;
+    private SalesOrder? rejecting;
+    private string rejectReason = "";
+
+    // Isian form SO
+    private int selectedCustomerId;
+    private string soNote = "";
+    private List<SoLineInput> lines = new();
+    private string lineSku = "";
+    private int lineQty = 1;
+    private decimal LinesTotal => lines.Sum(l => l.Subtotal);
+
+    // Isian form pelanggan
+    private string newCustomerName = "";
+    private string newCustomerPhone = "";
+    private string newCustomerAddress = "";
+
+    private string errorMessage = "";
+    private string successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = (await AuthTask).User;
+        canApprove = user.CanApprove();
+        Reload();
+    }
+
+    private void Reload()
+    {
+        orders = SoService.GetAll();
+        customers = SoService.GetCustomers();
+        products = Inventory.GetAll();
+
+        if (detail != null)
+            detail = orders.FirstOrDefault(o => o.Id == detail.Id);
+    }
+
+    private void ClearMessages()
+    {
+        errorMessage = "";
+        successMessage = "";
+    }
+
+    private void CloseAll()
+    {
+        showCreate = false;
+        showCustomers = false;
+        detail = null;
+        rejecting = null;
+    }
+
+    // ---------- Pelanggan ----------
+    private void ToggleCustomers()
+    {
+        ClearMessages();
+        var open = !showCustomers;
+        CloseAll();
+        showCustomers = open;
+    }
+
+    private void AddCustomer()
+    {
+        ClearMessages();
+        try
+        {
+            var c = SoService.AddCustomer(newCustomerName, newCustomerPhone, newCustomerAddress);
+            successMessage = $"Pelanggan {c.Name} berhasil ditambahkan.";
+            newCustomerName = "";
+            newCustomerPhone = "";
+            newCustomerAddress = "";
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // ---------- Buat SO ----------
+    private void OpenCreate()
+    {
+        ClearMessages();
+        CloseAll();
+        showCreate = true;
+        selectedCustomerId = 0;
+        soNote = "";
+        lines = new();
+        lineSku = "";
+        lineQty = 1;
+    }
+
+    private void AddLine()
+    {
+        ClearMessages();
+        var product = products.FirstOrDefault(p => p.Sku == lineSku);
+        if (product == null) { errorMessage = "Pilih produk dulu."; return; }
+        if (lineQty <= 0) { errorMessage = "Jumlah harus lebih dari 0."; return; }
+        if (lineQty > product.Stock)
+        {
+            errorMessage = $"Stok {product.Name} hanya {product.Stock}.";
+            return;
+        }
+        if (lines.Any(l => l.Sku == product.Sku))
+        {
+            errorMessage = $"{product.Name} sudah ada di daftar. Hapus dulu kalau ingin mengubah jumlahnya.";
+            return;
+        }
+
+        lines.Add(new SoLineInput
+        {
+            Sku = product.Sku,
+            ProductName = product.Name,
+            Quantity = lineQty,
+            UnitPrice = product.Price
+        });
+
+        lineSku = "";
+        lineQty = 1;
+    }
+
+    private void RemoveLine(SoLineInput line)
+    {
+        lines.Remove(line);
+    }
+
+    private void SubmitSo()
+    {
+        ClearMessages();
+        try
+        {
+            var so = SoService.Create(selectedCustomerId, lines, soNote, user);
+            successMessage = so.Status == SoStatus.Approved
+                ? $"{so.Number} dibuat dan langsung disetujui. Siap dikirim."
+                : $"{so.Number} dibuat dan menunggu persetujuan Manajer.";
+            showCreate = false;
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // ---------- Detail, Setujui, Tolak, Kirim ----------
+    private void ShowDetail(SalesOrder so)
+    {
+        ClearMessages();
+        CloseAll();
+        detail = so;
+    }
+
+    private void Approve(SalesOrder so)
+    {
+        ClearMessages();
+        try
+        {
+            SoService.Approve(so.Id, user);
+            successMessage = $"{so.Number} disetujui. Siap dikirim.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    private void StartReject(SalesOrder so)
+    {
+        ClearMessages();
+        CloseAll();
+        rejecting = so;
+        rejectReason = "";
+    }
+
+    private void ConfirmReject()
+    {
+        if (rejecting == null) return;
+        ClearMessages();
+        try
+        {
+            SoService.Reject(rejecting.Id, rejectReason, user);
+            successMessage = $"{rejecting.Number} ditolak.";
+            rejecting = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    private void Ship(SalesOrder so)
+    {
+        ClearMessages();
+        try
+        {
+            SoService.Ship(so.Id, user);
+            successMessage = $"{so.Number} dikirim. Stok berkurang {so.TotalQuantity} unit.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    private static string StatusColor(SoStatus s) => s switch
+    {
+        SoStatus.PendingApproval => "bg-warning text-dark",
+        SoStatus.Approved        => "bg-primary",
+        SoStatus.Rejected        => "bg-danger",
+        SoStatus.Shipped         => "bg-success",
+        _ => "bg-secondary"
+    };
+}

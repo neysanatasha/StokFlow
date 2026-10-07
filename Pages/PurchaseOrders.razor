@@ -1,0 +1,487 @@
+@page "/purchase-order"
+@inject PurchaseOrderService PoService
+@inject InventoryService Inventory
+
+<PageTitle>Purchase Order</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">Purchase Order</h3>
+    <div>
+        <button class="btn btn-primary me-2" @onclick="OpenCreate">+ Buat PO Baru</button>
+        @if (canApprove)
+        {
+            <button class="btn btn-outline-secondary" @onclick="ToggleSuppliers">Kelola Pemasok</button>
+        }
+    </div>
+</div>
+
+@if (errorMessage != "")
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+@if (successMessage != "")
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<!-- ====== PANEL PEMASOK ====== -->
+@if (showSuppliers)
+{
+    <div class="card mb-4 border-secondary">
+        <div class="card-body">
+            <h5 class="card-title">Daftar Pemasok</h5>
+            <table class="table table-sm">
+                <thead><tr><th>Nama</th><th>Telepon</th><th>Alamat</th></tr></thead>
+                <tbody>
+                    @foreach (var s in suppliers)
+                    {
+                        <tr><td>@s.Name</td><td>@s.Phone</td><td>@s.Address</td></tr>
+                    }
+                </tbody>
+            </table>
+
+            <h6>Tambah Pemasok</h6>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Nama</label>
+                    <input class="form-control" @bind="newSupplierName" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Telepon</label>
+                    <input class="form-control" @bind="newSupplierPhone" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Alamat</label>
+                    <input class="form-control" @bind="newSupplierAddress" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-success w-100" @onclick="AddSupplier">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ====== PANEL BUAT PO ====== -->
+@if (showCreate)
+{
+    <div class="card mb-4 border-primary">
+        <div class="card-body">
+            <h5 class="card-title">Buat Purchase Order</h5>
+
+            <div class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Pemasok</label>
+                    <select class="form-select" @bind="selectedSupplierId">
+                        <option value="0">-- pilih pemasok --</option>
+                        @foreach (var s in suppliers)
+                        {
+                            <option value="@s.Id">@s.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Catatan (opsional)</label>
+                    <input class="form-control" @bind="poNote" />
+                </div>
+            </div>
+
+            <h6>Tambah Barang</h6>
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-5">
+                    <label class="form-label">Produk</label>
+                    <select class="form-select" @bind="lineSku">
+                        <option value="">-- pilih produk --</option>
+                        @foreach (var p in products)
+                        {
+                            <option value="@p.Sku">@p.Sku — @p.Name (stok @p.Stock)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Jumlah</label>
+                    <input type="number" class="form-control" @bind="lineQty" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Harga beli / unit</label>
+                    <input type="number" class="form-control" @bind="lineCost" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-secondary w-100" @onclick="AddLine">+ Tambah</button>
+                </div>
+            </div>
+
+            @if (lines.Count > 0)
+            {
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Produk</th>
+                            <th class="text-end">Jumlah</th>
+                            <th class="text-end">Harga Beli</th>
+                            <th class="text-end">Subtotal</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in lines)
+                        {
+                            <tr>
+                                <td>@l.Sku — @l.ProductName</td>
+                                <td class="text-end">@l.Quantity</td>
+                                <td class="text-end">Rp @l.UnitCost.ToString("N0")</td>
+                                <td class="text-end">Rp @l.Subtotal.ToString("N0")</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveLine(l)">✕</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="text-end fw-bold">Total: Rp @LinesTotal.ToString("N0")</p>
+            }
+
+            <button class="btn btn-primary me-2" @onclick="SubmitPo" disabled="@(lines.Count == 0)">Ajukan PO</button>
+            <button class="btn btn-outline-secondary" @onclick="CloseAll">Batal</button>
+        </div>
+    </div>
+}
+
+<!-- ====== PANEL TOLAK ====== -->
+@if (rejecting != null)
+{
+    <div class="card mb-4 border-danger">
+        <div class="card-body">
+            <h5 class="card-title">Tolak @rejecting.Number — @rejecting.SupplierName</h5>
+            <label class="form-label">Alasan penolakan</label>
+            <input class="form-control mb-2" @bind="rejectReason" />
+            <button class="btn btn-danger me-2" @onclick="ConfirmReject">Tolak PO</button>
+            <button class="btn btn-outline-secondary" @onclick="CloseAll">Batal</button>
+        </div>
+    </div>
+}
+
+<!-- ====== PANEL DETAIL ====== -->
+@if (detail != null)
+{
+    <div class="card mb-4 border-info">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <h5 class="card-title">Detail @detail.Number — @detail.SupplierName</h5>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CloseAll">Tutup</button>
+            </div>
+
+            <p class="mb-1">Dibuat oleh <strong>@detail.CreatedByName</strong>, @detail.CreatedAt.ToString("dd/MM/yyyy HH:mm")</p>
+            @if (detail.DecidedByName != null)
+            {
+                <p class="mb-1">Diputuskan oleh <strong>@detail.DecidedByName</strong>, @(detail.DecidedAt?.ToString("dd/MM/yyyy HH:mm"))</p>
+            }
+            @if (detail.ReceivedByName != null)
+            {
+                <p class="mb-1">Diterima oleh <strong>@detail.ReceivedByName</strong>, @(detail.ReceivedAt?.ToString("dd/MM/yyyy HH:mm"))</p>
+            }
+            @if (!string.IsNullOrEmpty(detail.RejectReason))
+            {
+                <p class="mb-1 text-danger">Alasan ditolak: @detail.RejectReason</p>
+            }
+            @if (detail.Note != "")
+            {
+                <p class="mb-1">Catatan: @detail.Note</p>
+            }
+
+            <table class="table table-sm mt-2">
+                <thead>
+                    <tr>
+                        <th>Produk</th>
+                        <th class="text-end">Jumlah</th>
+                        <th class="text-end">Harga Beli</th>
+                        <th class="text-end">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var l in detail.Lines)
+                    {
+                        <tr>
+                            <td>@l.ProductSku — @l.ProductName</td>
+                            <td class="text-end">@l.Quantity</td>
+                            <td class="text-end">Rp @l.UnitCost.ToString("N0")</td>
+                            <td class="text-end">Rp @l.Subtotal.ToString("N0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="text-end fw-bold mb-0">Total: Rp @detail.Total.ToString("N0")</p>
+        </div>
+    </div>
+}
+
+<!-- ====== DAFTAR PO ====== -->
+<table class="table">
+    <thead>
+        <tr>
+            <th>No.</th>
+            <th>Tanggal</th>
+            <th>Pemasok</th>
+            <th class="text-end">Jumlah Barang</th>
+            <th class="text-end">Total</th>
+            <th>Status</th>
+            <th>Dibuat oleh</th>
+            <th>Aksi</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (orders.Count == 0)
+        {
+            <tr><td colspan="8" class="text-center text-muted">Belum ada PO.</td></tr>
+        }
+        @foreach (var po in orders)
+        {
+            <tr>
+                <td>@po.Number</td>
+                <td>@po.CreatedAt.ToString("dd/MM/yyyy")</td>
+                <td>@po.SupplierName</td>
+                <td class="text-end">@po.TotalQuantity</td>
+                <td class="text-end">Rp @po.Total.ToString("N0")</td>
+                <td><span class="badge @StatusColor(po.Status)">@po.StatusText</span></td>
+                <td>@po.CreatedByName</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info me-1" @onclick="() => ShowDetail(po)">Detail</button>
+                    @if (po.Status == PoStatus.PendingApproval && canApprove && po.CreatedBy != user.Username())
+                    {
+                        <button class="btn btn-sm btn-success me-1" @onclick="() => Approve(po)">Setujui</button>
+                        <button class="btn btn-sm btn-outline-danger me-1" @onclick="() => StartReject(po)">Tolak</button>
+                    }
+                    @if (po.Status == PoStatus.Approved)
+                    {
+                        <button class="btn btn-sm btn-primary" @onclick="() => Receive(po)">📦 Terima Barang</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthTask { get; set; } = default!;
+    private ClaimsPrincipal user = new();
+    private bool canApprove;
+
+    private List<PurchaseOrder> orders = new();
+    private List<Supplier> suppliers = new();
+    private List<Product> products = new();
+
+    // Panel yang sedang terbuka
+    private bool showCreate;
+    private bool showSuppliers;
+    private PurchaseOrder? detail;
+    private PurchaseOrder? rejecting;
+    private string rejectReason = "";
+
+    // Isian form PO
+    private int selectedSupplierId;
+    private string poNote = "";
+    private List<PoLineInput> lines = new();
+    private string lineSku = "";
+    private int lineQty = 1;
+    private decimal lineCost;
+    private decimal LinesTotal => lines.Sum(l => l.Subtotal);
+
+    // Isian form pemasok
+    private string newSupplierName = "";
+    private string newSupplierPhone = "";
+    private string newSupplierAddress = "";
+
+    private string errorMessage = "";
+    private string successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = (await AuthTask).User;
+        canApprove = user.CanApprove();
+        Reload();
+    }
+
+    private void Reload()
+    {
+        orders = PoService.GetAll();
+        suppliers = PoService.GetSuppliers();
+        products = Inventory.GetAll();
+
+        if (detail != null)
+            detail = orders.FirstOrDefault(o => o.Id == detail.Id);
+    }
+
+    private void ClearMessages()
+    {
+        errorMessage = "";
+        successMessage = "";
+    }
+
+    private void CloseAll()
+    {
+        showCreate = false;
+        showSuppliers = false;
+        detail = null;
+        rejecting = null;
+    }
+
+    // ---------- Pemasok ----------
+    private void ToggleSuppliers()
+    {
+        ClearMessages();
+        var open = !showSuppliers;
+        CloseAll();
+        showSuppliers = open;
+    }
+
+    private void AddSupplier()
+    {
+        ClearMessages();
+        try
+        {
+            var s = PoService.AddSupplier(newSupplierName, newSupplierPhone, newSupplierAddress, user);
+            successMessage = $"Pemasok {s.Name} berhasil ditambahkan.";
+            newSupplierName = "";
+            newSupplierPhone = "";
+            newSupplierAddress = "";
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // ---------- Buat PO ----------
+    private void OpenCreate()
+    {
+        ClearMessages();
+        CloseAll();
+        showCreate = true;
+        selectedSupplierId = 0;
+        poNote = "";
+        lines = new();
+        lineSku = "";
+        lineQty = 1;
+        lineCost = 0;
+    }
+
+    private void AddLine()
+    {
+        ClearMessages();
+        var product = products.FirstOrDefault(p => p.Sku == lineSku);
+        if (product == null) { errorMessage = "Pilih produk dulu."; return; }
+        if (lineQty <= 0) { errorMessage = "Jumlah harus lebih dari 0."; return; }
+        if (lineCost <= 0) { errorMessage = "Harga beli harus lebih dari 0."; return; }
+        if (lines.Any(l => l.Sku == product.Sku))
+        {
+            errorMessage = $"{product.Name} sudah ada di daftar. Hapus dulu kalau ingin mengubah jumlahnya.";
+            return;
+        }
+
+        lines.Add(new PoLineInput
+        {
+            Sku = product.Sku,
+            ProductName = product.Name,
+            Quantity = lineQty,
+            UnitCost = lineCost
+        });
+
+        lineSku = "";
+        lineQty = 1;
+        lineCost = 0;
+    }
+
+    private void RemoveLine(PoLineInput line)
+    {
+        lines.Remove(line);
+    }
+
+    private void SubmitPo()
+    {
+        ClearMessages();
+        try
+        {
+            var po = PoService.Create(selectedSupplierId, lines, poNote, user);
+            successMessage = $"{po.Number} berhasil dibuat dan menunggu persetujuan.";
+            showCreate = false;
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // ---------- Detail, Setujui, Tolak, Terima ----------
+    private void ShowDetail(PurchaseOrder po)
+    {
+        ClearMessages();
+        CloseAll();
+        detail = po;
+    }
+
+    private void Approve(PurchaseOrder po)
+    {
+        ClearMessages();
+        try
+        {
+            PoService.Approve(po.Id, user);
+            successMessage = $"{po.Number} disetujui. Klik 'Terima Barang' saat barang sudah datang.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    private void StartReject(PurchaseOrder po)
+    {
+        ClearMessages();
+        CloseAll();
+        rejecting = po;
+        rejectReason = "";
+    }
+
+    private void ConfirmReject()
+    {
+        if (rejecting == null) return;
+        ClearMessages();
+        try
+        {
+            PoService.Reject(rejecting.Id, rejectReason, user);
+            successMessage = $"{rejecting.Number} ditolak.";
+            rejecting = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    private void Receive(PurchaseOrder po)
+    {
+        ClearMessages();
+        try
+        {
+            PoService.Receive(po.Id, user);
+            successMessage = $"Barang {po.Number} diterima. Stok bertambah {po.TotalQuantity} unit.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    private static string StatusColor(PoStatus s) => s switch
+    {
+        PoStatus.PendingApproval => "bg-warning text-dark",
+        PoStatus.Approved        => "bg-primary",
+        PoStatus.Rejected        => "bg-danger",
+        PoStatus.Received        => "bg-success",
+        _ => "bg-secondary"
+    };
+}

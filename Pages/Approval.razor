@@ -1,0 +1,297 @@
+@page "/approval"
+@inject ApprovalService ApprovalSvc
+@inject PurchaseOrderService PoService
+@inject SalesOrderService SoService
+
+<PageTitle>Approval</PageTitle>
+
+<h3 class="mb-3">Pusat Approval</h3>
+
+<!-- ====== RINGKASAN SEMUA YANG MENUNGGU ====== -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-warning h-100"><div class="card-body">
+            <div class="text-muted">Pengajuan Perubahan Stok</div>
+            <h3 class="mb-0">@pending.Count</h3>
+            <small class="text-muted">Daftarnya ada di bawah halaman ini</small>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-primary h-100"><div class="card-body">
+            <div class="text-muted">Purchase Order</div>
+            <h3 class="mb-0">@pendingPos.Count</h3>
+            <a class="small" href="purchase-order">Buka halaman PO →</a>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-success h-100"><div class="card-body">
+            <div class="text-muted">Sales Order</div>
+            <h3 class="mb-0">@pendingSos.Count</h3>
+            <a class="small" href="sales-order">Buka halaman SO →</a>
+        </div></div>
+    </div>
+</div>
+
+@if (pendingPos.Count > 0 || pendingSos.Count > 0)
+{
+    <h5>PO & SO Menunggu Persetujuan</h5>
+    <table class="table table-sm mb-4">
+        <thead>
+            <tr>
+                <th>Jenis</th>
+                <th>No.</th>
+                <th>Tanggal</th>
+                <th>Pemasok / Pelanggan</th>
+                <th class="text-end">Total</th>
+                <th>Dibuat oleh</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var po in pendingPos)
+            {
+                <tr>
+                    <td><span class="badge bg-primary">PO</span></td>
+                    <td>@po.Number</td>
+                    <td>@po.CreatedAt.ToString("dd/MM/yyyy")</td>
+                    <td>@po.SupplierName</td>
+                    <td class="text-end">Rp @po.Total.ToString("N0")</td>
+                    <td>@po.CreatedByName</td>
+                    <td><a class="btn btn-sm btn-outline-primary" href="purchase-order">Buka</a></td>
+                </tr>
+            }
+            @foreach (var so in pendingSos)
+            {
+                <tr>
+                    <td><span class="badge bg-success">SO</span></td>
+                    <td>@so.Number</td>
+                    <td>@so.CreatedAt.ToString("dd/MM/yyyy")</td>
+                    <td>@so.CustomerName</td>
+                    <td class="text-end">Rp @so.Total.ToString("N0")</td>
+                    <td>@so.CreatedByName</td>
+                    <td><a class="btn btn-sm btn-outline-success" href="sales-order">Buka</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h5 class="mt-2">Pengajuan Perubahan Stok</h5>
+
+@if (errorMessage != "")
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+@if (successMessage != "")
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+@if (!canApprove)
+{
+    <div class="alert alert-info">
+        Anda bisa melihat daftar pengajuan. Persetujuan hanya bisa dilakukan oleh <strong>Manajer</strong> atau <strong>Admin</strong>.
+    </div>
+}
+
+<!-- ====== PANEL TOLAK ====== -->
+@if (rejecting != null)
+{
+    <div class="card mb-3 border-danger">
+        <div class="card-body">
+            <h5 class="card-title">Tolak @rejecting.Number — @rejecting.ProductName</h5>
+            <label class="form-label">Alasan penolakan</label>
+            <input class="form-control mb-2" @bind="rejectReason" />
+            <button class="btn btn-danger me-2" @onclick="ConfirmReject">Tolak Pengajuan</button>
+            <button class="btn btn-outline-secondary" @onclick="CancelReject">Batal</button>
+        </div>
+    </div>
+}
+
+<!-- ====== MENUNGGU PERSETUJUAN ====== -->
+<h5>Menunggu Persetujuan (@pending.Count)</h5>
+
+@if (pending.Count == 0)
+{
+    <div class="alert alert-success">Tidak ada pengajuan yang menunggu. ✅</div>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>No.</th>
+                <th>Tanggal</th>
+                <th>Produk</th>
+                <th>Jenis</th>
+                <th class="text-end">Jumlah</th>
+                <th>Catatan</th>
+                <th>Diajukan oleh</th>
+                <th>Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in pending)
+            {
+                <tr>
+                    <td>@r.Number</td>
+                    <td>@r.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                    <td>@r.ProductSku — @r.ProductName</td>
+                    <td>@r.ReasonText</td>
+                    <td class="text-end @(r.IsStockIn ? "text-success" : "text-danger")">
+                        @(r.IsStockIn ? "+" : "−")@r.Quantity
+                    </td>
+                    <td>@r.Note</td>
+                    <td>@r.RequestedByName</td>
+                    <td>
+                        @if (!canApprove)
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                        else if (r.RequestedBy == user.Username())
+                        {
+                            <span class="text-muted small">Pengajuan Anda sendiri</span>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-success me-1" @onclick="() => Approve(r)">Setujui</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => StartReject(r)">Tolak</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<!-- ====== RIWAYAT ====== -->
+<h5 class="mt-4">Riwayat Keputusan</h5>
+
+@if (history.Count == 0)
+{
+    <p class="text-muted">Belum ada pengajuan yang diputuskan.</p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>No.</th>
+                <th>Produk</th>
+                <th>Jenis</th>
+                <th class="text-end">Jumlah</th>
+                <th>Diajukan oleh</th>
+                <th>Diputuskan oleh</th>
+                <th>Tanggal Keputusan</th>
+                <th>Status</th>
+                <th>Alasan Ditolak</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in history)
+            {
+                <tr>
+                    <td>@r.Number</td>
+                    <td>@r.ProductName</td>
+                    <td>@r.ReasonText</td>
+                    <td class="text-end">@(r.IsStockIn ? "+" : "−")@r.Quantity</td>
+                    <td>@r.RequestedByName</td>
+                    <td>@r.DecidedByName</td>
+                    <td>@(r.DecidedAt?.ToString("dd/MM/yyyy HH:mm"))</td>
+                    <td>
+                        @if (r.Status == RequestStatus.Approved)
+                        {
+                            <span class="badge bg-success">Disetujui</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-danger">Ditolak</span>
+                        }
+                    </td>
+                    <td>@r.RejectReason</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthTask { get; set; } = default!;
+    private ClaimsPrincipal user = new();
+    private bool canApprove;
+
+    private List<StockRequest> pending = new();
+    private List<StockRequest> history = new();
+    private List<PurchaseOrder> pendingPos = new();
+    private List<SalesOrder> pendingSos = new();
+    private StockRequest? rejecting;
+    private string rejectReason = "";
+
+    private string errorMessage = "";
+    private string successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = (await AuthTask).User;
+        canApprove = user.CanApprove();
+        Reload();
+    }
+
+    private void Reload()
+    {
+        pending = ApprovalSvc.GetPending();
+        history = ApprovalSvc.GetHistory();
+        pendingPos = PoService.GetAll().Where(p => p.Status == PoStatus.PendingApproval).ToList();
+        pendingSos = SoService.GetAll().Where(s => s.Status == SoStatus.PendingApproval).ToList();
+    }
+
+    private void ClearMessages()
+    {
+        errorMessage = "";
+        successMessage = "";
+    }
+
+    private void Approve(StockRequest r)
+    {
+        ClearMessages();
+        try
+        {
+            ApprovalSvc.Approve(r.Id, user);
+            successMessage = $"{r.Number} disetujui. Stok {r.ProductName} sudah diperbarui.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    private void StartReject(StockRequest r)
+    {
+        ClearMessages();
+        rejecting = r;
+        rejectReason = "";
+    }
+
+    private void CancelReject()
+    {
+        rejecting = null;
+    }
+
+    private void ConfirmReject()
+    {
+        if (rejecting == null) return;
+        ClearMessages();
+        try
+        {
+            ApprovalSvc.Reject(rejecting.Id, rejectReason, user);
+            successMessage = $"{rejecting.Number} ditolak.";
+            rejecting = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+}

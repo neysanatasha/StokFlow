@@ -1,0 +1,201 @@
+@page "/integrasi"
+@attribute [Authorize(Roles = "Admin,Manajer")]
+@inject CsvService CsvSvc
+@inject IJSRuntime JS
+@inject IConfiguration Config
+@inject NavigationManager Nav
+
+<PageTitle>Integration</PageTitle>
+
+<h3 class="mb-3">Integration</h3>
+
+@if (errorMessage != "")
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+@if (successMessage != "")
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<!-- ====== EKSPOR ====== -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">📤 Ekspor Data ke Excel (CSV)</h5>
+        <p class="text-muted small">File bisa dibuka di Excel, Numbers, atau Google Sheets.</p>
+        <button class="btn btn-outline-primary me-2 mb-2" @onclick="ExportProducts">📦 Produk & Stok</button>
+        <button class="btn btn-outline-primary me-2 mb-2" @onclick="ExportMovements">📋 Kartu Stok</button>
+        <button class="btn btn-outline-primary me-2 mb-2" @onclick="ExportSalesOrders">🛒 Sales Order</button>
+        <button class="btn btn-outline-primary mb-2" @onclick="ExportPurchaseOrders">🧺 Purchase Order</button>
+    </div>
+</div>
+
+<!-- ====== IMPOR ====== -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">📥 Impor Produk dari Excel (CSV)</h5>
+        <p class="mb-2">Baris pertama file wajib berisi judul kolom berikut:</p>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered w-auto">
+                <thead>
+                    <tr><th>Kode</th><th>Nama</th><th>Harga</th><th>StokAwal</th><th>BatasMinimum</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>FLO_010</td><td>Bunga Tulip Kuning</td><td>45000</td><td>20</td><td>5</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p class="small text-muted">
+            Pemisah kolom boleh titik koma ( ; ) atau koma ( , ). Harga dalam rupiah tanpa desimal.
+            Baris dengan kode yang sudah terdaftar akan dilewati.
+        </p>
+
+        <button class="btn btn-sm btn-outline-secondary mb-3" @onclick="DownloadTemplate">⬇️ Unduh Contoh File</button>
+
+        <InputFile OnChange="OnFileSelected" accept=".csv" class="form-control" />
+
+        @if (isImporting)
+        {
+            <p class="mt-2">Memproses file...</p>
+        }
+
+        @if (importResult != null)
+        {
+            <div class="alert @(importResult.Errors.Count == 0 ? "alert-success" : "alert-warning") mt-3 mb-0">
+                <strong>@importResult.Added produk berhasil ditambahkan.</strong>
+                @if (importResult.Errors.Count > 0)
+                {
+                    <div class="mt-2">@importResult.Errors.Count baris dilewati:</div>
+                    <ul class="mb-0 small">
+                        @foreach (var err in importResult.Errors)
+                        {
+                            <li>@err</li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<!-- ====== API (Bagian 8B) ====== -->
+<!-- ====== API ====== -->
+<div class="card mb-4 border-secondary">
+    <div class="card-body">
+        <h5 class="card-title">🔌 API untuk Aplikasi Lain</h5>
+        <p class="small text-muted">
+            Aplikasi lain (kasir, marketplace) bisa membaca data stok secara otomatis dalam format JSON.
+            Setiap permintaan wajib membawa kunci API di header <code>X-API-Key</code>.
+            API ini <strong>hanya membaca</strong>; perubahan stok tetap wajib lewat approval.
+        </p>
+
+        <p class="mb-2">Kunci API: <code>@apiKey</code></p>
+
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Alamat</th><th>Isi jawaban</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var ep in endpoints)
+                    {
+                        <tr>
+                            <td><code>GET /api/@ep.Path</code></td>
+                            <td>@ep.Description</td>
+                            <td>
+                                <a class="btn btn-sm btn-outline-primary" target="_blank"
+                                   href="@($"{Nav.BaseUri}api/{ep.Path}?apiKey={apiKey}")">Coba ↗</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <p class="small mb-1">Contoh pemanggilan dari Terminal:</p>
+        <pre class="small p-2 border rounded mb-0"><code>curl -H "X-API-Key: @apiKey" @(Nav.BaseUri)api/low-stock</code></pre>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthTask { get; set; } = default!;
+    private ClaimsPrincipal user = new();
+
+        // Kunci & daftar pintu API (untuk dokumentasi di halaman ini)
+    private string apiKey => Config["Integration:ApiKey"] ?? "";
+    private readonly List<(string Path, string Description)> endpoints = new()
+    {
+        ("products",                "Semua produk beserta stok dan status"),
+        ("products/FLO_001",        "Satu produk"),
+        ("products/FLO_001/movements", "Kartu stok satu produk"),
+        ("low-stock",               "Produk yang perlu dibeli lagi"),
+    };
+    private ImportResult? importResult;
+    private bool isImporting;
+
+    private string errorMessage = "";
+    private string successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = (await AuthTask).User;
+    }
+
+    private void ClearMessages()
+    {
+        errorMessage = "";
+        successMessage = "";
+    }
+
+    // ---------- Ekspor ----------
+    private Task ExportProducts()       => Download($"produk_{Stamp()}.csv", CsvSvc.ExportProducts());
+    private Task ExportMovements()      => Download($"kartu_stok_{Stamp()}.csv", CsvSvc.ExportStockMovements());
+    private Task ExportSalesOrders()    => Download($"sales_order_{Stamp()}.csv", CsvSvc.ExportSalesOrders());
+    private Task ExportPurchaseOrders() => Download($"purchase_order_{Stamp()}.csv", CsvSvc.ExportPurchaseOrders());
+    private Task DownloadTemplate()     => Download("contoh_impor_produk.csv", CsvSvc.ProductTemplate());
+
+    private async Task Download(string fileName, string csv)
+    {
+        ClearMessages();
+        var bytes = CsvService.ToFileBytes(csv);
+        await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes), "text/csv;charset=utf-8");
+        successMessage = $"File {fileName} diunduh. Cek folder Downloads.";
+    }
+
+    private static string Stamp() => DateTime.Now.ToString("yyyyMMdd_HHmm");
+
+    // ---------- Impor ----------
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        ClearMessages();
+        importResult = null;
+        isImporting = true;
+
+        try
+        {
+            if (!e.File.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("File harus berformat .csv");
+
+            // Batas ukuran 1 MB, supaya server tidak dibebani file raksasa
+            using var stream = e.File.OpenReadStream(maxAllowedSize: 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var content = await reader.ReadToEndAsync();
+
+            importResult = CsvSvc.ImportProducts(content, user);
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (IOException)
+        {
+            errorMessage = "File terlalu besar (maksimal 1 MB).";
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+}

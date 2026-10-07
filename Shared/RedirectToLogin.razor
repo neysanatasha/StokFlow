@@ -1,0 +1,9 @@
+@inject NavigationManager Nav
+
+@code {
+    // Belum login? Lempar ke halaman login
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("login");
+    }
+}

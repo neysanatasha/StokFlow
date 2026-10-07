@@ -1,0 +1,158 @@
+@page "/"
+@page "/dashboard"
+@inject InventoryService Inventory
+@inject ApprovalService ApprovalSvc
+@inject PurchaseOrderService PoService
+@inject SalesOrderService SoService
+
+<PageTitle>Dashboard</PageTitle>
+
+<h3 class="mb-3">Dashboard</h3>
+
+<!-- ====== PEMBERITAHUAN PERSETUJUAN (Admin & Manajer) ====== -->
+@if (canApprove && TotalPending > 0)
+{
+    <div class="alert alert-warning d-flex justify-content-between align-items-center">
+        <span>
+            ⏳ Menunggu persetujuan:
+            <strong>@pendingStock</strong> pengajuan stok,
+            <strong>@pendingPo</strong> PO,
+            <strong>@pendingSo</strong> SO.
+        </span>
+        <a class="btn btn-sm btn-warning" href="approval">Buka Pusat Approval</a>
+    </div>
+}
+
+<!-- ====== AKSES CEPAT (disaring sesuai peran) ====== -->
+<h5>Akses Cepat</h5>
+<div class="row g-3 mb-4">
+    @foreach (var m in modules)
+    {
+        <div class="col-6 col-md-3">
+            <a class="card module-tile h-100" href="@m.Url">
+                <div class="card-body text-center">
+                    <div class="icon">@m.Icon</div>
+                    <div class="fw-semibold">@m.Name</div>
+                </div>
+            </a>
+        </div>
+    }
+</div>
+
+<!-- ====== RINGKASAN STOK ====== -->
+<h5>Ringkasan Stok</h5>
+<div class="row g-3 mb-2">
+    <div class="col-md-4">
+        <div class="card border-primary h-100"><div class="card-body">
+            <div class="text-muted">Jumlah Produk</div>
+            <h3 class="mb-0">@summary.TotalProducts</h3>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-primary h-100"><div class="card-body">
+            <div class="text-muted">Nilai Stok di Gudang</div>
+            <h3 class="mb-0">Rp @summary.TotalStockValue.ToString("N0")</h3>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-success h-100"><div class="card-body">
+            <div class="text-muted">Nilai Barang Terjual</div>
+            <h3 class="mb-0 text-success">Rp @summary.TotalSalesValue.ToString("N0")</h3>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-danger h-100"><div class="card-body">
+            <div class="text-muted">Kerugian Bunga Layu / Rusak</div>
+            <h3 class="mb-0 text-danger">Rp @summary.TotalWastedValue.ToString("N0")</h3>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-danger h-100"><div class="card-body">
+            <div class="text-muted">Produk Habis</div>
+            <h3 class="mb-0 text-danger">@summary.OutOfStockCount</h3>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-warning h-100"><div class="card-body">
+            <div class="text-muted">Produk Hampir Habis</div>
+            <h3 class="mb-0">@summary.LowStockCount</h3>
+        </div></div>
+    </div>
+</div>
+<p class="small text-muted mb-4">
+    Nilai di atas dihitung dengan harga jual <strong>saat ini</strong>.
+    Untuk penjualan, modal, dan laba berdasarkan harga saat transaksi, lihat halaman <strong>Reporting</strong>.
+</p>
+
+<!-- ====== PERLU DIBELI LAGI ====== -->
+<h5>Perlu Dibeli Lagi</h5>
+@if (summary.NeedRestock.Count == 0)
+{
+    <div class="alert alert-success">Semua stok aman. 🌸</div>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Kode</th>
+                <th>Nama Produk</th>
+                <th class="text-end">Stok</th>
+                <th class="text-end">Batas Minimum</th>
+                <th class="text-end">Kekurangan</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in summary.NeedRestock)
+            {
+                <tr class="@(p.IsOutOfStock ? "table-danger" : "table-warning")">
+                    <td>@p.Sku</td>
+                    <td>@p.Name</td>
+                    <td class="text-end">@p.Stock</td>
+                    <td class="text-end">@p.MinimumStock</td>
+                    <td class="text-end"><strong>@(p.MinimumStock - p.Stock)</strong></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthTask { get; set; } = default!;
+
+    private DashboardSummary summary = new();
+    private bool canApprove;
+
+    private int pendingStock;
+    private int pendingPo;
+    private int pendingSo;
+    private int TotalPending => pendingStock + pendingPo + pendingSo;
+
+    // Semua modul. ManagerOnly = hanya untuk Admin & Manajer
+    private readonly List<(string Name, string Icon, string Url, bool ManagerOnly)> allModules = new()
+    {
+        ("Inventory",      "📦", "produk",          false),
+        ("Sales Order",    "🛒", "sales-order",     false),
+        ("Purchase Order", "🧺", "purchase-order",  false),
+        ("Approval",       "✅", "approval",        false),
+        ("Integration",    "🔗", "integrasi",       true),
+        ("Reporting",      "📊", "laporan",         true),
+        ("User Settings",  "⚙️", "pengaturan-user", false),
+    };
+
+    // Modul yang ditampilkan untuk pengguna yang sedang login
+    private List<(string Name, string Icon, string Url, bool ManagerOnly)> modules = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthTask).User;
+        canApprove = user.CanApprove();
+
+        modules = allModules.Where(m => !m.ManagerOnly || canApprove).ToList();
+
+        summary = Inventory.GetSummary();
+        pendingStock = ApprovalSvc.GetPendingCount();
+        pendingPo = PoService.GetPendingCount();
+        pendingSo = SoService.GetPendingCount();
+    }
+}

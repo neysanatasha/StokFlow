@@ -1,0 +1,325 @@
+@page "/produk"
+@inject InventoryService Inventory
+@inject ApprovalService Approvals
+
+<PageTitle>Inventory</PageTitle>
+
+<h3>Inventory — Stok Gudang</h3>
+
+@if (errorMessage != "")
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+@if (successMessage != "")
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<!-- ====== PANEL AJUKAN PERUBAHAN STOK ====== -->
+@if (selectedProduct != null)
+{
+    <div class="card mb-4 border-primary">
+        <div class="card-body">
+            <h5 class="card-title">Ajukan Perubahan Stok: @selectedProduct.Name</h5>
+            <p class="mb-2">Stok sekarang: <strong>@selectedProduct.Stock</strong></p>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Jenis perubahan</label>
+                    <select class="form-select" @bind="requestReason">
+                        <option value="@MovementReason.Pembelian">Barang masuk (pembelian)</option>
+                        <option value="@MovementReason.Terjual">Barang keluar — terjual</option>
+                        <option value="@MovementReason.LayuRusak">Barang keluar — layu / rusak</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Jumlah</label>
+                    <input type="number" class="form-control" @bind="quantity" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Catatan (opsional)</label>
+                    <input class="form-control" @bind="note" />
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary me-2" @onclick="SubmitRequest">Kirim Pengajuan</button>
+                    <button class="btn btn-outline-secondary" @onclick="CloseAllPanels">Tutup</button>
+                </div>
+            </div>
+            <small class="text-muted d-block mt-2">⏳ Stok baru berubah setelah pengajuan disetujui Manajer atau Admin.</small>
+        </div>
+    </div>
+}
+
+<!-- ====== PANEL KARTU STOK ====== -->
+@if (historyProduct != null)
+{
+    <div class="card mb-4 border-info">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <h5 class="card-title">Kartu Stok: @historyProduct.Sku — @historyProduct.Name</h5>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CloseAllPanels">Tutup</button>
+            </div>
+
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Tanggal & Jam</th>
+                        <th>Keterangan</th>
+                        <th class="text-end">Masuk</th>
+                        <th class="text-end">Keluar</th>
+                        <th class="text-end">Sisa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in historyProduct.Movements.OrderBy(x => x.Id))
+                    {
+                        <tr>
+                            <td>@m.Date.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@m.Description</td>
+                            <td class="text-end">@(m.Quantity > 0 ? m.Quantity.ToString() : "")</td>
+                            <td class="text-end">@(m.Quantity < 0 ? (-m.Quantity).ToString() : "")</td>
+                            <td class="text-end">@m.StockAfter</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <p class="mb-0">
+                Total terjual: <strong>@historyProduct.TotalSold</strong> &nbsp;|&nbsp;
+                Total layu/rusak: <strong class="text-danger">@historyProduct.TotalWasted</strong>
+            </p>
+        </div>
+    </div>
+}
+
+<!-- ====== KONFIRMASI HAPUS ====== -->
+@if (productToDelete != null)
+{
+    <div class="alert alert-warning">
+        Yakin ingin menghapus <strong>@productToDelete.Name</strong>?
+        <button class="btn btn-danger btn-sm ms-2" @onclick="ConfirmDelete">Ya, hapus</button>
+        <button class="btn btn-outline-secondary btn-sm ms-1" @onclick="CloseAllPanels">Batal</button>
+    </div>
+}
+
+<!-- ====== FORM TAMBAH PRODUK (hanya Admin & Manajer) ====== -->
+@if (canManageProducts)
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Tambah Produk Baru</h5>
+            <div class="row g-2">
+                <div class="col-md-2">
+                    <label class="form-label">Kode</label>
+                    <input class="form-control" @bind="form.Sku" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Nama Produk</label>
+                    <input class="form-control" @bind="form.Name" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Harga</label>
+                    <input type="number" class="form-control" @bind="form.Price" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Stok Awal</label>
+                    <input type="number" class="form-control" @bind="form.Stock" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Batas Minimum</label>
+                    <input type="number" class="form-control" @bind="form.MinimumStock" />
+                </div>
+            </div>
+            <button class="btn btn-primary mt-3" @onclick="AddProduct">Simpan Produk</button>
+        </div>
+    </div>
+}
+
+<!-- ====== TABEL PRODUK ====== -->
+<table class="table">
+    <thead>
+        <tr>
+            <th>Kode</th>
+            <th>Nama Produk</th>
+            <th>Harga</th>
+            <th>Stok</th>
+            <th>Batas Minimum</th>
+            <th>Status</th>
+            <th>Aksi</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var p in products)
+        {
+            var waiting = PendingFor(p.Sku);
+            <tr class="@RowColor(p)">
+                <td>@p.Sku</td>
+                <td>@p.Name</td>
+                <td>Rp @p.Price.ToString("N0")</td>
+                <td>@p.Stock</td>
+                <td>@p.MinimumStock</td>
+                <td>
+                    @if (p.IsOutOfStock)
+                    {
+                        <span class="badge bg-danger">Habis</span>
+                    }
+                    else if (p.IsLowStock)
+                    {
+                        <span class="badge bg-warning text-dark">Hampir habis</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-success">Aman</span>
+                    }
+
+                    @if (waiting > 0)
+                    {
+                        <span class="badge bg-info text-dark ms-1">⏳ @waiting pengajuan</span>
+                    }
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => OpenStockPanel(p)">Ajukan Stok</button>
+                    <button class="btn btn-sm btn-outline-info me-1" @onclick="() => OpenHistory(p)">Kartu Stok</button>
+                    @if (isAdmin)
+                    {
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => AskDelete(p)">Hapus</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    // Data pengguna yang sedang login (dikirim otomatis oleh sistem login)
+    [CascadingParameter] private Task<AuthenticationState> AuthTask { get; set; } = default!;
+    private ClaimsPrincipal user = new();
+    private bool isAdmin;
+    private bool canManageProducts;
+
+    private List<Product> products = new();
+    private List<StockRequest> pending = new();
+    private ProductForm form = new();
+    private Product? selectedProduct;
+    private Product? historyProduct;
+    private Product? productToDelete;
+
+    private MovementReason requestReason = MovementReason.Terjual;
+    private int quantity = 1;
+    private string note = "";
+
+    private string errorMessage = "";
+    private string successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = (await AuthTask).User;
+        isAdmin = user.IsInRole("Admin");
+        canManageProducts = user.IsInRole("Admin") || user.IsInRole("Manajer");
+        Reload();
+    }
+
+    private void Reload()
+    {
+        products = Inventory.GetAll();
+        pending = Approvals.GetPending();
+
+        if (historyProduct != null)
+            historyProduct = products.FirstOrDefault(p => p.Sku == historyProduct.Sku);
+    }
+
+    // Berapa pengajuan yang masih menunggu untuk produk ini
+    private int PendingFor(string sku) => pending.Count(r => r.ProductSku == sku);
+
+    private void ClearMessages()
+    {
+        errorMessage = "";
+        successMessage = "";
+    }
+
+    private void CloseAllPanels()
+    {
+        selectedProduct = null;
+        historyProduct = null;
+        productToDelete = null;
+    }
+
+    // --- Tambah produk ---
+    private void AddProduct()
+    {
+        ClearMessages();
+        try
+        {
+            var product = Inventory.AddProduct(form);
+            successMessage = $"Produk {product.Name} berhasil ditambahkan.";
+            form = new ProductForm();
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // --- Ajukan perubahan stok ---
+    private void OpenStockPanel(Product p)
+    {
+        ClearMessages();
+        CloseAllPanels();
+        selectedProduct = p;
+        requestReason = MovementReason.Terjual;
+        quantity = 1;
+        note = "";
+    }
+
+    private void SubmitRequest()
+    {
+        ClearMessages();
+        if (selectedProduct == null) return;
+
+        try
+        {
+            var request = Approvals.CreateRequest(selectedProduct.Sku, requestReason, quantity, note, user);
+            successMessage = $"Pengajuan {request.Number} untuk {selectedProduct.Name} terkirim. Menunggu persetujuan.";
+            CloseAllPanels();
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // --- Kartu stok ---
+    private void OpenHistory(Product p)
+    {
+        ClearMessages();
+        CloseAllPanels();
+        historyProduct = p;
+    }
+
+    // --- Hapus produk ---
+    private void AskDelete(Product p)
+    {
+        ClearMessages();
+        CloseAllPanels();
+        productToDelete = p;
+    }
+
+    private void ConfirmDelete()
+    {
+        if (productToDelete == null) return;
+
+        var name = productToDelete.Name;
+        Inventory.DeleteProduct(productToDelete.Sku);
+        productToDelete = null;
+        Reload();
+        successMessage = $"Produk {name} sudah dihapus.";
+    }
+
+    private string RowColor(Product p)
+    {
+        if (p.IsOutOfStock) return "table-danger";
+        if (p.IsLowStock) return "table-warning";
+        return "";
+    }
+}

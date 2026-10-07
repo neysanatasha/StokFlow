@@ -1,0 +1,73 @@
+@page "/login"
+@layout LoginLayout
+@attribute [AllowAnonymous]
+@inject UserService Users
+@inject CustomAuthStateProvider AuthState
+@inject NavigationManager Nav
+
+<PageTitle>Masuk - StokFlow</PageTitle>
+
+<div class="card login-card shadow">
+    <div class="card-body p-4">
+        <div class="text-center mb-4">
+            <div style="font-size: 2.5rem">🌸</div>
+            <h4 class="mb-0">StokFlow</h4>
+            <div class="text-muted">ERP Belle Fleur Store</div>
+        </div>
+
+        @if (errorMessage != "")
+        {
+            <div class="alert alert-danger py-2">@errorMessage</div>
+        }
+
+        <label class="form-label">Nama pengguna</label>
+        <input class="form-control mb-3" @bind="username" @bind:event="oninput" />
+
+        <label class="form-label">Kata sandi</label>
+        <input type="password" class="form-control mb-4" @bind="password" @bind:event="oninput" @onkeyup="OnKeyUp" />
+
+        <button class="btn btn-primary w-100" @onclick="DoLogin" disabled="@isBusy">
+            @(isBusy ? "Memeriksa..." : "Masuk")
+        </button>
+
+        <hr />
+        <div class="small text-muted">
+            <strong>Akun percobaan:</strong><br />
+            admin / admin123 (Admin)<br />
+            manajer / manajer123 (Manajer)<br />
+            staf / staf123 (Staf Gudang)
+        </div>
+    </div>
+</div>
+
+@code {
+    private string username = "";
+    private string password = "";
+    private string errorMessage = "";
+    private bool isBusy;
+
+    // Tekan Enter di kotak kata sandi = klik Masuk
+    private async Task OnKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await DoLogin();
+    }
+
+    private async Task DoLogin()
+    {
+        if (isBusy) return;
+        errorMessage = "";
+        isBusy = true;
+
+        var user = Users.ValidateLogin(username, password);
+        if (user == null)
+        {
+            errorMessage = "Nama pengguna atau kata sandi salah.";
+            isBusy = false;
+            return;
+        }
+
+        await AuthState.LoginAsync(new UserSession(user.Username, user.FullName, user.Role.ToString()));
+        Nav.NavigateTo("");
+    }
+}

@@ -1,0 +1,50 @@
+﻿@inherits LayoutComponentBase
+@inject CustomAuthStateProvider AuthState
+@inject NavigationManager Nav
+
+<PageTitle>StokFlow</PageTitle>
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4 d-flex justify-content-between">
+            <span class="fw-semibold">🌸 Sistem Inventori Toko Bunga</span>
+
+            <div class="d-flex align-items-center gap-3">
+                <AuthorizeView>
+                    <Authorized>
+                        <span>
+                            👤 @(context.User.FindFirst("FullName")?.Value)
+                            <span class="badge bg-secondary ms-1">@(RoleText(context.User.FindFirst(ClaimTypes.Role)?.Value))</span>
+                        </span>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="Logout">Keluar</button>
+                    </Authorized>
+                </AuthorizeView>
+                <ThemeToggle />
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+@code {
+    private async Task Logout()
+    {
+        await AuthState.LogoutAsync();
+        Nav.NavigateTo("login");
+    }
+
+    private static string RoleText(string? role) => role switch
+    {
+        "Admin" => "Admin",
+        "Manajer" => "Manajer",
+        "StafGudang" => "Staf Gudang",
+        _ => "-"
+    };
+}

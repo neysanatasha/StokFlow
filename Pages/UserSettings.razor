@@ -1,0 +1,331 @@
+@page "/pengaturan-user"
+@inject UserService UserSvc
+
+<PageTitle>User Settings</PageTitle>
+
+<h3 class="mb-3">User Settings</h3>
+
+@if (errorMessage != "")
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+@if (successMessage != "")
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<!-- ====== PROFIL & GANTI KATA SANDI (semua pengguna) ====== -->
+<div class="row g-3 mb-4">
+    <div class="col-md-5">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">👤 Profil Saya</h5>
+                <table class="table table-sm mb-0">
+                    <tr><th>Nama</th><td>@user.FullName()</td></tr>
+                    <tr><th>Nama pengguna</th><td>@user.Username()</td></tr>
+                    <tr><th>Peran</th><td>@RoleText(myRole)</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">🔑 Ganti Kata Sandi</h5>
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label">Kata sandi lama</label>
+                        <input type="password" class="form-control" @bind="oldPassword" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Kata sandi baru</label>
+                        <input type="password" class="form-control" @bind="newPassword" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Ulangi kata sandi baru</label>
+                        <input type="password" class="form-control" @bind="confirmPassword" />
+                    </div>
+                </div>
+                <small class="text-muted d-block mt-1">Minimal 6 karakter.</small>
+                <button class="btn btn-primary mt-2" @onclick="ChangePassword">Simpan Kata Sandi</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ====== KELOLA PENGGUNA (khusus Admin) ====== -->
+@if (isAdmin)
+{
+    <h4 class="mb-3">Kelola Pengguna</h4>
+
+    <!-- Panel reset kata sandi -->
+    @if (resetting != null)
+    {
+        <div class="card mb-3 border-warning">
+            <div class="card-body">
+                <h5 class="card-title">Reset Kata Sandi: @resetting.FullName (@resetting.Username)</h5>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label">Kata sandi baru</label>
+                        <input type="password" class="form-control" @bind="resetPassword" />
+                    </div>
+                    <div class="col-md-7">
+                        <button class="btn btn-warning me-2" @onclick="ConfirmReset">Simpan</button>
+                        <button class="btn btn-outline-secondary" @onclick="CancelReset">Batal</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Form tambah pengguna -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Tambah Pengguna</h5>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label">Nama pengguna</label>
+                    <input class="form-control" @bind="newUsername" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Nama lengkap</label>
+                    <input class="form-control" @bind="newFullName" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Kata sandi awal</label>
+                    <input type="password" class="form-control" @bind="newUserPassword" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Peran</label>
+                    <select class="form-select" @bind="newRole">
+                        <option value="@UserRole.StafGudang">Staf Gudang</option>
+                        <option value="@UserRole.Manajer">Manajer</option>
+                        <option value="@UserRole.Admin">Admin</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-success w-100" @onclick="AddUser">Tambah</button>
+                </div>
+            </div>
+            <small class="text-muted d-block mt-1">Nama pengguna: 3–20 karakter, huruf kecil dan angka saja, tanpa spasi.</small>
+        </div>
+    </div>
+
+    <!-- Daftar pengguna -->
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nama pengguna</th>
+                <th>Nama lengkap</th>
+                <th style="width: 200px">Peran</th>
+                <th>Status</th>
+                <th>Aksi</th>
+            </tr>
+        </thead>
+        <tbody @key="renderVersion">
+            @foreach (var u in users)
+            {
+                var isSelf = u.Username == user.Username();
+                <tr class="@(u.IsActive ? "" : "text-muted")">
+                    <td>@u.Username @(isSelf ? "(Anda)" : "")</td>
+                    <td>@u.FullName</td>
+                    <td>
+                        <select class="form-select form-select-sm" value="@u.Role" disabled="@isSelf"
+                                @onchange="e => ChangeRole(u, e)">
+                            <option value="@UserRole.Admin">Admin</option>
+                            <option value="@UserRole.Manajer">Manajer</option>
+                            <option value="@UserRole.StafGudang">Staf Gudang</option>
+                        </select>
+                    </td>
+                    <td>
+                        @if (u.IsActive)
+                        {
+                            <span class="badge bg-success">Aktif</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Nonaktif</span>
+                        }
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartReset(u)">Reset Sandi</button>
+                        @if (!isSelf)
+                        {
+                            if (u.IsActive)
+                            {
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => SetActive(u, false)">Nonaktifkan</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => SetActive(u, true)">Aktifkan</button>
+                            }
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <p class="small text-muted">
+        Perubahan peran dan status akun berlaku saat pengguna tersebut <strong>masuk ulang</strong>.
+    </p>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthTask { get; set; } = default!;
+    private ClaimsPrincipal user = new();
+    private string myRole = "";
+    private bool isAdmin;
+
+    // Ganti kata sandi sendiri
+    private string oldPassword = "";
+    private string newPassword = "";
+    private string confirmPassword = "";
+
+    // Kelola pengguna
+    private List<AppUser> users = new();
+    private int renderVersion;              // dipakai untuk menyegarkan tampilan tabel
+    private AppUser? resetting;
+    private string resetPassword = "";
+
+    private string newUsername = "";
+    private string newFullName = "";
+    private string newUserPassword = "";
+    private UserRole newRole = UserRole.StafGudang;
+
+    private string errorMessage = "";
+    private string successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = (await AuthTask).User;
+        myRole = user.FindFirst(ClaimTypes.Role)?.Value ?? "";
+        isAdmin = user.IsInRole("Admin");
+
+        if (isAdmin)
+            Reload();
+    }
+
+    private void Reload()
+    {
+        users = UserSvc.GetAll(user);
+        renderVersion++;
+    }
+
+    private void ClearMessages()
+    {
+        errorMessage = "";
+        successMessage = "";
+    }
+
+    // ---------- Ganti kata sandi sendiri ----------
+    private void ChangePassword()
+    {
+        ClearMessages();
+        try
+        {
+            UserSvc.ChangeOwnPassword(user, oldPassword, newPassword, confirmPassword);
+            successMessage = "Kata sandi berhasil diganti. Gunakan kata sandi baru saat masuk berikutnya.";
+            oldPassword = "";
+            newPassword = "";
+            confirmPassword = "";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // ---------- Tambah pengguna ----------
+    private void AddUser()
+    {
+        ClearMessages();
+        try
+        {
+            var u = UserSvc.AddUser(newUsername, newFullName, newUserPassword, newRole, user);
+            successMessage = $"Pengguna {u.Username} ({RoleText(u.Role.ToString())}) berhasil ditambahkan.";
+            newUsername = "";
+            newFullName = "";
+            newUserPassword = "";
+            newRole = UserRole.StafGudang;
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    // ---------- Ubah peran ----------
+    private void ChangeRole(AppUser u, ChangeEventArgs e)
+    {
+        ClearMessages();
+        try
+        {
+            var role = Enum.Parse<UserRole>(e.Value?.ToString() ?? "");
+            UserSvc.ChangeRole(u.Id, role, user);
+            successMessage = $"Peran {u.Username} diubah menjadi {RoleText(role.ToString())}.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    // ---------- Aktif / nonaktif ----------
+    private void SetActive(AppUser u, bool active)
+    {
+        ClearMessages();
+        try
+        {
+            UserSvc.SetActive(u.Id, active, user);
+            successMessage = active
+                ? $"Akun {u.Username} diaktifkan kembali."
+                : $"Akun {u.Username} dinonaktifkan dan tidak bisa login lagi.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        Reload();
+    }
+
+    // ---------- Reset kata sandi ----------
+    private void StartReset(AppUser u)
+    {
+        ClearMessages();
+        resetting = u;
+        resetPassword = "";
+    }
+
+    private void CancelReset()
+    {
+        resetting = null;
+    }
+
+    private void ConfirmReset()
+    {
+        if (resetting == null) return;
+        ClearMessages();
+        try
+        {
+            UserSvc.ResetPassword(resetting.Id, resetPassword, user);
+            successMessage = $"Kata sandi {resetting.Username} berhasil direset.";
+            resetting = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private static string RoleText(string role) => role switch
+    {
+        "Admin" => "Admin",
+        "Manajer" => "Manajer",
+        "StafGudang" => "Staf Gudang",
+        _ => "-"
+    };
+}

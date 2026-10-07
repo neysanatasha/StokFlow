@@ -1,0 +1,27 @@
+@inject IJSRuntime JS
+
+<div class="theme-switch" title="Ganti tema">
+    <button class="@(isDark ? "" : "active")" @onclick='() => SetTheme("light")'>☀️</button>
+    <button class="@(isDark ? "active" : "")" @onclick='() => SetTheme("dark")'>🌙</button>
+</div>
+
+@code {
+    private bool isDark;
+
+    // Setelah halaman tampil, baca tema yang tersimpan
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var theme = await JS.InvokeAsync<string>("themeHelper.get");
+            isDark = theme == "dark";
+            StateHasChanged(); // perbarui tampilan tombol
+        }
+    }
+
+    private async Task SetTheme(string theme)
+    {
+        isDark = theme == "dark";
+        await JS.InvokeVoidAsync("themeHelper.set", theme);
+    }
+}
