@@ -14,19 +14,19 @@ tersebut dari nol dengan .NET.
 
 | Login | Dashboard |
 |---|---|
-| ![Login](docs/Login.png) | ![Dashboard](docs/dashboard.png) |
+| ![Login](docs/login.png) | ![Dashboard](docs/dashboard.png) |
 
 | Tema Gelap | Inventory & Kartu Stok |
 |---|---|
-| ![Dashboard gelap](docs/Dashboard.png) | ![Inventory](docs/inventory.png) |
+| ![Dashboard gelap](docs/dashboard_dark.png) | ![Inventory](docs/inventory.png) |
 
 | Pusat Approval | Purchase Order |
 |---|---|
-| ![Approval](docs/approval.png) | ![Purchase Order](docs/purchase-order.png) |
+| ![Approval](docs/approval.png) | ![Purchase Order](docs/purchase_order.png) |
 
 | Sales Order | Reporting |
 |---|---|
-| ![Sales Order](docs/sales-order.png) | ![Reporting](docs/reporting.png) |
+| ![Sales Order](docs/sales_order.png) | ![Reporting](docs/reporting.png) |
 
 ---
 
