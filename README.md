@@ -14,11 +14,11 @@ tersebut dari nol dengan .NET.
 
 | Login | Dashboard |
 |---|---|
-| ![Login](docs/login.png) | ![Dashboard](docs/dashboard.png) |
+| ![Login](docs/Login.png) | ![Dashboard](docs/dashboard.png) |
 
 | Tema Gelap | Inventory & Kartu Stok |
 |---|---|
-| ![Dashboard gelap](docs/dashboard-gelap.png) | ![Inventory](docs/inventory.png) |
+| ![Dashboard gelap](docs/Dashboard.png) | ![Inventory](docs/inventory.png) |
 
 | Pusat Approval | Purchase Order |
 |---|---|
